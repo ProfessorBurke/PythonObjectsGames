@@ -1,0 +1,8 @@
+160, 118, Betelgeuse
+247, 77, Meissa
+289, 138, Bellatrix
+261, 250, Mintaka
+245, 265, Alnilam
+224, 278, Alnitak
+195, 409, Saiph
+334, 383, Rigel

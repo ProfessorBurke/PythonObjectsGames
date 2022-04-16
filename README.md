@@ -1,3 +1,2 @@
 # PythonObjectsGames
-The code examples from Objects and Games with Python
-August, 2019
+The code examples from Objects and Games with Python and the YouTube videos associated with the book.

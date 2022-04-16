@@ -1,0 +1,308 @@
+"""Move an image by pressing keys."""
+from typing import ClassVar
+import os.path
+import pickle
+import io
+import pygame
+
+class MoveablePicture():
+    """An image that can be moved.
+
+       Public methods: __init__, draw, move, attach, detach, notify,
+       get_coordinates
+    """
+    #Annotate and initialize class-level fields
+    UP: ClassVar[int] = 0
+    DOWN: ClassVar[int] = 1
+    LEFT: ClassVar[int] = 2
+    RIGHT: ClassVar[int] = 3
+
+    # Annotate object-level fields
+    _x: float
+    _y: float
+    _image_file: str
+    _image: pygame.Surface
+    _observers: list
+    
+    def __init__(self, x: float, y: float, image_file: str) -> None:
+        """Initialize an instance of image at x,y."""
+        self._image_file = image_file
+        self._image = pygame.image.load(image_file)
+        self._x = x - self._image.get_width() / 2
+        self._y = y - self._image.get_height() / 2
+        self._observers = []
+
+    def __getstate__(self) -> dict:
+        """Return a copy of this object's dict with image removed."""
+        copy_dict: dict = self.__dict__.copy()
+        if "_image" in copy_dict:
+            del copy_dict["_image"]
+        if "_observers" in copy_dict:
+            del copy_dict["_observers"]
+        return copy_dict
+
+    def __setstate__(self, pickled_dict: dict) -> None:
+        """Read the object in and load the image."""
+        self.__dict__ = pickled_dict
+        self._observers = []
+        self._image = pygame.image.load(self._image_file)
+
+    def draw(self, surface: pygame.Surface) -> None:
+        """Draw the image on the surface."""
+        surface.blit(self._image, (self._x, self._y))
+        
+    def attach(self, observer: object) -> None:
+        """Attach the observer so it can receive updates."""
+        self._observers.append(observer)
+
+    def detach(self, observer: object) -> None:
+        """Detach the observer so it no longer receives updates."""
+        if observer in self._observers:
+            self._observers.remove(observer)
+
+    def get_coordinates(self) -> tuple:
+        """Return coordinates."""
+        return (self._x, self._y)
+
+    def notify(self) -> None:
+        """Notify observers of a state change."""
+        for observer in self._observers:
+            observer.update()
+
+    def move(self, direction: int) -> None:
+        """Move the image 5 pixels in direction."""
+        if direction == MoveablePicture.UP:
+            self._y -= 5
+        elif direction == MoveablePicture.DOWN:
+            self._y += 5
+        elif direction == MoveablePicture.LEFT:
+            self._x -= 5
+        elif direction == MoveablePicture.RIGHT:
+            self._x += 5
+        self.notify()
+
+class Coordinates():
+    """Display coordinates of the MoveablePicture object.
+
+       Public methods:  __init__, update, draw
+    """
+
+    # Annotate object-level fields
+    _moveable_picture: MoveablePicture
+    _x: int
+    _y: int
+    _coord_surface: pygame.Surface
+
+    def __init__(self, moveable_picture: MoveablePicture,
+                 x: int, y: int) -> None:
+        """Initialize fields from parameters and attach to picture."""
+        # Annotate variables
+        coordinates: tuple
+        font: pygame.font.Font
+
+        # Initialize fields
+        self._moveable_picture = moveable_picture
+        moveable_picture.attach(self)
+        self._x = x
+        self._y = y
+        coordinates = self._moveable_picture.get_coordinates()
+        font = pygame.font.SysFont("Helvetica", 30)
+        self._coord_surface = font.render(str(coordinates[0]) + ", "
+                                          + str(coordinates[1]),
+                                          True, (255, 255, 255))
+
+    def draw(self, surface: pygame.Surface) -> None:
+        """Draw to surface."""
+        surface.blit(self._coord_surface, (self._x, self._y))
+
+    def update(self) -> None:
+        """Picture has updated; update coordinates."""
+        coordinates: tuple = self._moveable_picture.get_coordinates()
+        font: pygame.font.Font = pygame.font.SysFont("Helvetica", 30)
+        self._coord_surface = font.render(str(coordinates[0]) + ", "
+                                          + str(coordinates[1]),
+                                          True, (255, 255, 255))
+    
+class Command():
+    """Abstract superclass for command structure.
+
+       Public methods:  __init__, execute
+    """
+
+    # Annotate object-level fields
+    _executor: object
+    
+    def __init__(self, executor: object) -> None:
+        """Initialize from parameter."""
+        self._executor = executor
+
+    def execute(self) -> None:
+        """Execute the command."""
+        pass
+
+    def undo(self) -> None:
+        """Undo the command."""
+        pass
+
+class MoveCommand(Command):
+    """Move a picture.
+
+       Public methods:  __init__, execute
+    """
+
+    # Annotate object-level fields
+    #_executor: MoveablePicture
+    _direction: int
+    
+    def __init__(self, executor: object, direction: int) -> None:
+        """Initialize from parameter."""
+        super().__init__(executor)
+        self._direction = direction
+
+    def execute(self) -> None:
+        """Execute the command."""
+        self._executor.move(self._direction)
+
+    def undo(self) -> None:
+        """Undo the move."""
+        direction: int = MoveablePicture.LEFT
+        if self._direction == MoveablePicture.UP:
+            direction = MoveablePicture.DOWN
+        elif self._direction == MoveablePicture.DOWN:
+            direction = MoveablePicture.UP
+        elif self._direction == MoveablePicture.LEFT:
+            direction = MoveablePicture.RIGHT      
+        self._executor.move(direction)    
+
+class Settings():
+    """Settings for the program.
+
+       Public methods: __init__, get_keys, get_size
+    """
+    # Annotate and initialize class-level fields
+    ARROW: ClassVar[tuple] = (pygame.K_UP, pygame.K_DOWN, pygame.K_LEFT, pygame.K_RIGHT)
+    ASDW: ClassVar[tuple] = (pygame.K_w, pygame.K_s, pygame.K_a, pygame.K_d)
+    
+    # Annotate object-level fields
+    _key_settings: tuple
+    _size: tuple
+
+    def __init__(self, key_settings, size) -> None:
+        self._key_settings = key_settings
+        self._size = size
+
+    def get_keys(self) -> tuple:
+        return self._key_settings
+
+    def get_size(self) -> tuple:
+        return self._size
+
+class PictureMover():
+
+    # Annotate object-level fields
+    _picture: MoveablePicture
+    _screen: pygame.Surface
+    _background: pygame.Surface
+    _coordinates: Coordinates
+    _keys: tuple
+
+    def __init__(self, settings: Settings,
+                 picture: MoveablePicture,
+                 coordinates: Coordinates) -> None:
+        """Initialize from settings, create window."""
+        # Annotate variables
+        size: tuple
+        # Create the window.
+        size = settings.get_size()
+        self._screen = pygame.display.set_mode(size)
+        pygame.display.set_caption("Press keys to move the picture")
+        self._background = pygame.Surface(size)
+        ## Enable key hold -- turned off for this version.
+        ## pygame.key.set_repeat(1, 50)
+        # Read in the picture.
+        self._keys = settings.get_keys()
+        self._picture = picture
+        self._coordinates = coordinates
+        
+    def go(self) -> None:
+        """Create a window with an image that can be moved."""
+        # Annotate and initialize variables
+        user_quit: bool = False
+        clock: pygame.time.Clock = pygame.time.Clock()
+        event: pygame.event.Event
+        command: Command = None
+        undo_command: Command = None
+        command_list: list = []
+            
+        # Run until the user closes the window.
+        while not user_quit:
+            # Loop 30 times per second
+            clock.tick(30)
+            command = None
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    user_quit = True
+                elif event.type == pygame.KEYDOWN:
+                    # Process arrow key events by moving picture
+                    key = event.__dict__["key"]
+                    if key == self._keys[0]:
+                        command = MoveCommand(self._picture, MoveablePicture.UP)
+                    elif key == self._keys[1]:
+                        command = MoveCommand(self._picture, MoveablePicture.DOWN)
+                    elif key == self._keys[2]:
+                        command = MoveCommand(self._picture, MoveablePicture.LEFT)
+                    elif key == self._keys[3]:
+                        command = MoveCommand(self._picture, MoveablePicture.RIGHT)
+                    elif key == pygame.K_u:
+                        if len(command_list) > 0:
+                            undo_command = command_list[len(command_list) - 1]
+                            undo_command.undo()
+                            command_list.remove(undo_command)
+                    if command != None:
+                        command.execute()
+                        command_list.append(command)
+                        
+            # Draw the background and picture               
+            self._screen.blit(self._background,(0,0))
+            self._picture.draw(self._screen)
+            self._coordinates.draw(self._screen)
+            pygame.display.flip()
+
+def main():
+    # Annotate variables
+    file_out: io.BufferedWriter
+    file_in: io.BufferedReader
+    picture: MoveablePicture
+    picture_mover: PictureMover
+    coordinates: Coordinates
+    settings: Settings
+    
+    # Initialize pygame.
+    pygame.init()
+
+    # Read settings and picture from file if it exists.
+    if os.path.isfile("picture_mover"):
+        with open("picture_mover", "rb") as file_in:
+            settings = pickle.load(file_in)
+            picture = pickle.load(file_in)
+    else:
+        settings = Settings(Settings.ARROW, (480, 480))
+        picture: MoveablePicture = MoveablePicture(480/2,
+                                                   480/2,
+                                                   "eclipse_small.jpg")
+
+    # Create the coordinates object
+    coordinates = Coordinates(picture, 15, 15)
+    
+    # Create and run the program.
+    picture_mover = PictureMover(settings, picture, coordinates)
+    picture_mover.go()
+
+    # Clean up resources.
+    pygame.quit()
+
+    with open("picture_mover", "wb") as file_out:
+        pickle.dump(settings, file_out)
+        pickle.dump(picture, file_out)
+
+main()
